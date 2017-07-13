@@ -6,41 +6,18 @@ import json
 import logging
 import random
 import webapp2
-
-USEP = False
-
-CORNERP = 60
-WALLP = 12
-WALLPIN = 8
-NXCORNERP_OUT = 0.2
-NXCORNERP_IN = 0.2
-NXWALLP = 0.8
-NXWALLPCO = 1.5
-INLANDP = 2
-INLANDPCORNERP = 5
-
-LUTP = {(1,1): CORNERP, (1,2): NXCORNERP_OUT, (1,3): WALLP, (1,4): WALLPIN, (1,5): WALLPIN, (1,6): WALLP, (1,7): NXCORNERP_OUT, (1,8): CORNERP,
-        (2,1): NXCORNERP_OUT, (2,2): NXCORNERP_IN, (2,3): NXWALLPCO, (2,4): NXWALLP, (2,5): NXWALLP, (2,6): NXWALLPCO, (2,7): NXCORNERP_IN, (2,8): NXCORNERP_OUT,
-        (3,1): WALLP, (3,2): NXWALLPCO, (3,3): INLANDPCORNERP, (3,4): INLANDP, (3,5): INLANDP, (3,6): INLANDPCORNERP, (3,7): NXWALLPCO, (3,8): WALLP,
-        (4,1): WALLPIN, (4,2): NXWALLP, (4,3): INLANDP, (4,4): INLANDP, (4,5): INLANDP, (4,6): INLANDP, (4,7): NXWALLP, (4,8): WALLPIN,
-        (5,1): WALLPIN, (5,2): NXWALLP, (5,3): INLANDP, (5,4): INLANDP, (5,5): INLANDP, (5,6): INLANDP, (5,7): NXWALLP, (5,8): WALLPIN,
-        (6,1): WALLP, (6,2): NXWALLPCO, (6,3): INLANDPCORNERP, (6,4): INLANDP, (6,5): INLANDP, (6,6): INLANDPCORNERP, (6,7): NXWALLPCO, (6,8): WALLP,
-        (7,1): NXCORNERP_OUT, (7,2): NXCORNERP_IN, (7,3): NXWALLPCO, (7,4): NXWALLP, (7,5): NXWALLP, (7,6): NXWALLPCO, (7,7): NXCORNERP_IN, (7,8): NXCORNERP_OUT,
-        (8,1): CORNERP, (8,2): NXCORNERP_OUT, (8,3): WALLP, (8,4): WALLPIN, (8,5): WALLPIN, (8,6): WALLP, (8,7): NXCORNERP_OUT, (8,8): CORNERP}
+import numpy as np
 
 # http://uguisu.skr.jp/othello/5-1.html
-CORNER = 110.0
+CORNER = 150.0
 WALL = 0.5
 WALLIN = 0.2
-NXCORNER_OUT = -22.0
-NXCORNER_IN = -26.0
-NXWALL = -2.3
-NXWALLCO = -2.0
-INLAND = -0.5
-INLANDCORNER = 0.2
-
-CO_VALID_MOVES = 2.0
-MAX_CO_VALID_MOVES = 10
+NXCORNER_OUT = -24.0
+NXCORNER_IN = -28.0
+NXWALL = -2.0
+NXWALLCO = -1.8
+INLAND = -0.4
+INLANDCORNER = -0.0
 
 LUT = {(1,1): CORNER, (1,2): NXCORNER_OUT, (1,3): WALL, (1,4): WALLIN, (1,5): WALLIN, (1,6): WALL, (1,7): NXCORNER_OUT, (1,8): CORNER,
         (2,1): NXCORNER_OUT, (2,2): NXCORNER_IN, (2,3): NXWALLCO, (2,4): NXWALL, (2,5): NXWALL, (2,6): NXWALLCO, (2,7): NXCORNER_IN, (2,8): NXCORNER_OUT,
@@ -51,6 +28,11 @@ LUT = {(1,1): CORNER, (1,2): NXCORNER_OUT, (1,3): WALL, (1,4): WALLIN, (1,5): WA
         (7,1): NXCORNER_OUT, (7,2): NXCORNER_IN, (7,3): NXWALLCO, (7,4): NXWALL, (7,5): NXWALL, (7,6): NXWALLCO, (7,7): NXCORNER_IN, (7,8): NXCORNER_OUT,
         (8,1): CORNER, (8,2): NXCORNER_OUT, (8,3): WALL, (8,4): WALLIN, (8,5): WALLIN, (8,6): WALL, (8,7): NXCORNER_OUT, (8,8): CORNER}
 
+CORNERS = [[1,1], [1,8], [8,1], [8,8]]
+WALLS = [[1,3], [1,4], [1,5], [1,6], [3,1], [3,8], [4,1], [4,8], [5,1], [5,8], [6,1], [6,8], [8,3], [8,4], [8,5], [8,6]]
+INLANDS = [[3,3], [3,4], [3,5], [3,6], [4,3], [4,4], [4,5], [4,6], [5,3], [5,4], [5,5], [5,6], [6,3], [6,4], [6,5], [6,6]]
+NXWALLS = [[2,3], [2,4], [2,5], [2,6], [3,2], [3,7], [4,2], [4,7], [5,2], [5,7], [6,2], [6,7], [7,3], [7,4], [7,5], [7,6]]
+NXCORNERS = [[1,2], [1,7], [2,1], [2,2], [2,7], [2,8], [7,1], [7,2], [7,7], [7,8], [8,2], [8,7]]
 
 # Reads json description of the board and provides simple interface.
 class Game:
@@ -78,12 +60,35 @@ class Game:
 	#   "As": player number
 	def ValidMoves(self):
                 moves = []
-                for y in xrange(1,9):
-                        for x in xrange(1,9):
-                                move = {"Where": [x,y],
-                                        "As": self.Next()}
-                                if self.NextBoardPosition(move):
-                                        moves.append(move)
+
+                for pos in CORNERS:
+                    move = {"Where": pos,
+                        "As": self.Next()}
+                    if self.NextBoardPosition(move):
+                        moves.append(move)
+                for pos in WALLS:
+                    move = {"Where": pos,
+                            "As": self.Next()}
+                    if self.NextBoardPosition(move):
+                        moves.append(move)
+                
+                for pos in INLANDS:
+                    move = {"Where": pos,
+                            "As": self.Next()}
+                    if self.NextBoardPosition(move):
+                        moves.append(move)
+
+                for pos in NXWALLS:
+                    move = {"Where": pos,
+                            "As": self.Next()}
+                    if self.NextBoardPosition(move):
+                        moves.append(move)
+
+                for pos in NXCORNERS:
+                    move = {"Where": pos,
+                            "As": self.Next()}
+                    if self.NextBoardPosition(move):
+                        moves.append(move)
                 return moves
 
 	# Helper function of NextBoardPosition.  It looks towards
@@ -168,17 +173,6 @@ class Game:
                     if piece == 2:
                         score = score - LUT[(x + 1,y + 1)]
             
-            if USEP:
-                flag = 0
-
-                if self.Next() == 1:
-                    flag = 1
-                if self.Next() == 2:
-                    flag = -1
-
-                for move in self.ValidMoves():
-                    score = score + flag * CO_VALID_MOVES * LUTP[tuple(move["Where"])]
-
             count = self.Count()
 
             if count[1] == 1:
@@ -223,8 +217,12 @@ def PrettyMove(move):
 	m = move["Where"]
 	return '%s%d' % (chr(ord('A') + m[0] - 1), m[1])
 
-def ScoreRec(g, limit):
-        if limit >= 500:
+def ScoreRec(g, limit, alpha, beta):
+        valid_moves = g.ValidMoves()
+        length = len(valid_moves)
+        limit = limit - length / 2.0
+
+        if limit <= 0:
             return g.Score()
 
         count = g.Count()
@@ -242,37 +240,37 @@ def ScoreRec(g, limit):
         if count[2] == 0:
             return float("inf")
 
-        valid_moves = g.ValidMoves()
         player = g.Next()
         count = g.Count()
 
-        if len(valid_moves) == 0:
+        if length == 0:
             if player == 1:
                 return -1 * float("inf")
             if player == 2:
                 return float("inf")
 
-        if player == 1:
-            best = -1 * float("inf")
-        if player == 2:
-            best = float("inf")
-
-
-        co = len(valid_moves)
-
         for move in valid_moves:
             next_g = g.NextBoardPosition(move)
-            score = ScoreRec(next_g, limit * co + 1)
-            if player == 1:
-                if best < score:
-                    best = score
-            if player == 2:
-                if best > score:
-                    best = score
+            score = ScoreRec(next_g, limit - 1, alpha, beta)
 
-        return best
+            if player == 1:
+                if score > alpha:
+                    alpha = score
+            if player == 2:
+                if  score < beta:
+                    beta = score
+
+            if alpha >= beta:
+                break
+
+        if player == 1:
+            return alpha
+        else:
+            return beta
+
 
 def FirstPhase(g):
+        print("Check Valid Moves")
         valid_moves = g.ValidMoves()
         next_move = valid_moves[0]
         player = g.Next()
@@ -282,17 +280,30 @@ def FirstPhase(g):
         if player == 2:
             best = float("inf")
 
+        alpha = -1 * float("inf")
+        beta = float("inf")
+
+        limit = 18
+
+        length = len(valid_moves)
+
+        limit = limit - length / 2.0
+
+        # limit = len(valid_moves)
+
         for move in valid_moves:
             next_g = g.NextBoardPosition(move)
-            score = ScoreRec(next_g, len(valid_moves))
+            score = ScoreRec(next_g, limit, alpha, beta)
             if player == 1:
-                if best < score:
-                    best = score
+                if score > alpha:
+                    alpha = score
                     next_move = move
             if player == 2:
-                if best > score:
-                    best = score
+                if  score < beta:
+                    beta = score
                     next_move = move
+            if alpha >= beta:
+                break
 
         return next_move
             
@@ -311,7 +322,7 @@ def MiddlePhase(g):
 
         return next_move
 
-def FinalPhase(g):
+def FinalPhase(g, alpha, beta):
         valid_moves = g.ValidMoves()
         player = g.Next()
         count = g.Count()
@@ -334,17 +345,22 @@ def FinalPhase(g):
 
         for move in valid_moves:
             next_g = g.NextBoardPosition(move)
-            score, nmove = FinalPhase(next_g)
+            score, nmove = FinalPhase(next_g, alpha, beta)
             if player == 1:
-                if best < score:
-                    best = score
+                if score > alpha:
+                    alpha = score
                     next_move = move
             if player == 2:
-                if best > score:
-                    best = score
+                if  score < beta:
+                    beta = score
                     next_move = move
+            if alpha >= beta:
+                break
 
-        return (best, next_move)
+        if player == 1:
+            return (alpha, next_move)
+        else:
+            return (beta, next_move)
 
 class MainHandler(webapp2.RequestHandler):
     # Handling GET request, just for debugging purposes.
@@ -385,18 +401,17 @@ Paste JSON here:<p/><textarea name=json cols=80 rows=24></textarea>
 	    	# move = random.choice(valid_moves)
                 count = g.Count()
                 countC = g.CountCorner()
-                if count[0] < 9 :
-                    score, move = FinalPhase(g)
+                if count[1] == 2 and count[2] == 2:
+    		    self.response.write("D3")
+                elif count[0] < 12 :
+                    score, move = FinalPhase(g, 0, 64)
+    		    self.response.write(PrettyMove(move))
                 elif max(countC[1], countC[2]) >= 2:
                     move = MiddlePhase(g) 
+    		    self.response.write(PrettyMove(move))
                 else:
-                    # if count[0] < 30:
-                    #     global CO_VALID_MOVES
-                    #     CO_VALID_MOVES = (64 - count[0]) * 0.05
-                    #     global USEP
-                    #     USEP = True
                     move = FirstPhase(g)
-    		self.response.write(PrettyMove(move))
+    		    self.response.write(PrettyMove(move))
 app = webapp2.WSGIApplication([
     ('/', MainHandler)
 ], debug=True)
